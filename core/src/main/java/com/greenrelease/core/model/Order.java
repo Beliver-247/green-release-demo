@@ -60,6 +60,7 @@ public class Order {
         if (userId != order.userId) return false;
         if (Double.compare(order.amount, amount) != 0) return false;
         if (!product.equals(order.product)) return false;
+        System.out.println("Comparing order statuses: " + status + " vs " + order.status);
         return status.equals(order.status);
     }
 
