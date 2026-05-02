@@ -32,7 +32,8 @@ public class UserController {
     public ResponseEntity<User> getUserById(@PathVariable int id) {
         User user = userService.getUserById(id);
         if (user == null) {
-            return ResponseEntity.notFound().build();
+            System.out.println("User with id " + id + " not found");
+            return ResponseEntity.notFound().build();      
         }
         return ResponseEntity.ok(user);
     }
