@@ -11,7 +11,7 @@ pipeline {
         // Remote server for deployment (update as needed)
         REMOTE_HOST = '147.15.144.192'
         REMOTE_PORT = '2510'
-        REMOTE_USER = 'hiran'
+        REMOTE_USER = 'dumindu'
         SSH_CREDENTIALS = 'ubuntu-pc-ssh'
 
         // Optional metrics collector (adjust or remove)
