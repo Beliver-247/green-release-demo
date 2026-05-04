@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   app:
-    image: your-docker-namespace/green-release-app:latest
+    image: beliver-247/green-release-app:latest
     restart: always
     ports:
       - "8080:8080"
