@@ -50,6 +50,7 @@ pipeline {
         stage('Build Optimizer - Analyze') {
             steps {
                 script {
+                    sh 'docker pull beliver247/build-optimizer-agent:latest'
                     def output = sh(
                         script: '''
                             EXIT_CODE=0
