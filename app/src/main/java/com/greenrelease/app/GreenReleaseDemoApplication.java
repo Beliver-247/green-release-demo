@@ -26,10 +26,10 @@ public class GreenReleaseDemoApplication {
     /**
      * Wire HealthService bean
      */
-/*    @Bean
+    @Bean
     public HealthService healthService() {
         return new HealthService();
-    } */
+    } 
 
     /**
      * Wire UserService bean
