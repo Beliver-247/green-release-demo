@@ -1,6 +1,14 @@
 pipeline {
     agent any
 
+    parameters {
+        booleanParam(
+            name: 'DRY_RUN',
+            defaultValue: false,
+            description: 'When true, only run the optimizer analysis without building, testing, or deploying.'
+        )
+    }
+
     environment {
         DOCKER_HUB_CREDENTIALS = credentials('dockerhub-dumindu-credentials')
         DOCKER_IMAGE = 'beliver247/green-release-app'
@@ -115,13 +123,17 @@ pipeline {
                         env.MAVEN_TEST_COMMANDS = ''
                         env.AFFECTED_MODULES = ''
                     }
+
+                    if (params.DRY_RUN) {
+                        echo "=== DRY RUN MODE — Skipping build, test, Docker, and deploy stages ==="
+                    }
                 }
             }
         }
 
         stage('Selective Build') {
             when {
-                expression { env.OPTIMIZER_STATUS == 'success' && env.MAVEN_BUILD_COMMANDS?.trim() }
+                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' && env.MAVEN_BUILD_COMMANDS?.trim() }
             }
             steps {
                 script {
@@ -136,7 +148,7 @@ pipeline {
 
         stage('Selective Test') {
             when {
-                expression { env.OPTIMIZER_STATUS == 'success' && env.MAVEN_TEST_COMMANDS?.trim() }
+                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' && env.MAVEN_TEST_COMMANDS?.trim() }
             }
             steps {
                 script {
@@ -151,7 +163,7 @@ pipeline {
 
         stage('Docker Build') {
             when {
-                expression { env.OPTIMIZER_STATUS == 'success' }
+                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
                 dir('app') {
@@ -162,7 +174,7 @@ pipeline {
 
         stage('Docker Push') {
             when {
-                expression { env.OPTIMIZER_STATUS == 'success' }
+                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
                 sh """
@@ -176,7 +188,7 @@ pipeline {
 
         stage('Deploy to Server') {
             when {
-                expression { env.OPTIMIZER_STATUS == 'success' }
+                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
                 sshagent(credentials: ["${SSH_CREDENTIALS}"]) {
@@ -198,7 +210,7 @@ pipeline {
 
         stage('Smoke Test') {
             when {
-                expression { env.OPTIMIZER_STATUS == 'success' }
+                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
                 sshagent(credentials: ["${SSH_CREDENTIALS}"]) {
@@ -214,7 +226,9 @@ pipeline {
     post {
         success {
             script {
-                if (env.OPTIMIZER_STATUS == 'success') {
+                if (params.DRY_RUN) {
+                    echo "DRY RUN COMPLETE — Build #${BUILD_NUMBER} — Analysis only, no changes deployed"
+                } else if (env.OPTIMIZER_STATUS == 'success') {
                     echo "Deployment SUCCESSFUL — Build #${BUILD_NUMBER} (modules: ${env.AFFECTED_MODULES})"
                 } else {
                     echo "Pipeline COMPLETE — Build #${BUILD_NUMBER} — No code changes to deploy (status: ${env.OPTIMIZER_STATUS})"
