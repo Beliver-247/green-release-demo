@@ -268,28 +268,28 @@ pipeline {
                 def totalDuration = (System.currentTimeMillis() - (env.PIPELINE_START as Long)) / 1000.0
 
                 // Send metrics to GreenDevOps Dashboard
-                def dashboardPayload = [
-                    job_name:             env.JOB_NAME,
-                    build_number:         env.BUILD_NUMBER,
-                    pipeline_type:        'optimized',
-                    commit_sha:           env.COMMIT_SHA ?: '',
-                    commit_message:       env.COMMIT_MSG ?: '',
-                    status:               currentBuild.currentResult ?: 'UNKNOWN',
-                    total_duration_s:     totalDuration,
-                    build_duration_s:     env.BUILD_DURATION ? env.BUILD_DURATION as Double : null,
-                    test_duration_s:      env.TEST_DURATION ? env.TEST_DURATION as Double : null,
-                    docker_duration_s:    env.DOCKER_BUILD_DURATION ? env.DOCKER_BUILD_DURATION as Double : null,
-                    deploy_duration_s:    env.DEPLOY_DURATION ? env.DEPLOY_DURATION as Double : null,
-                    optimizer_duration_s: env.OPTIMIZER_DURATION ? env.OPTIMIZER_DURATION as Double : null,
-                    modules_built:        env.AFFECTED_MODULES ?: '',
-                    modules_tested:       env.AFFECTED_MODULES ?: '',
-                    tests_executed:       env.TESTS_EXECUTED ? env.TESTS_EXECUTED as Integer : 0,
-                    tests_skipped:        0,
-                    affected_modules:     env.AFFECTED_MODULES ?: '',
-                    build_command:        env.MAVEN_BUILD_COMMANDS ?: '',
-                    test_command:         env.MAVEN_TEST_COMMANDS ?: '',
-                ]
-                def jsonPayload = new groovy.json.JsonBuilder(dashboardPayload).toString()
+                def cleanCommitMsg = (env.COMMIT_MSG ?: '').replaceAll('"', '\\\\"')
+                def jsonPayload = """{
+                    "job_name": "${env.JOB_NAME}",
+                    "build_number": "${env.BUILD_NUMBER}",
+                    "pipeline_type": "optimized",
+                    "commit_sha": "${env.COMMIT_SHA ?: ''}",
+                    "commit_message": "${cleanCommitMsg}",
+                    "status": "${currentBuild.currentResult ?: 'UNKNOWN'}",
+                    "total_duration_s": ${totalDuration},
+                    "build_duration_s": ${env.BUILD_DURATION ?: 'null'},
+                    "test_duration_s": ${env.TEST_DURATION ?: 'null'},
+                    "docker_duration_s": ${env.DOCKER_BUILD_DURATION ?: 'null'},
+                    "deploy_duration_s": ${env.DEPLOY_DURATION ?: 'null'},
+                    "optimizer_duration_s": ${env.OPTIMIZER_DURATION ?: 'null'},
+                    "modules_built": "${env.AFFECTED_MODULES ?: ''}",
+                    "modules_tested": "${env.AFFECTED_MODULES ?: ''}",
+                    "tests_executed": ${env.TESTS_EXECUTED ?: 0},
+                    "tests_skipped": 0,
+                    "affected_modules": "${env.AFFECTED_MODULES ?: ''}",
+                    "build_command": "${env.MAVEN_BUILD_COMMANDS ?: ''}",
+                    "test_command": "${env.MAVEN_TEST_COMMANDS ?: ''}"
+                }"""
 
                 sh """
                     curl -s -X POST ${DASHBOARD_URL}/api/builds \
