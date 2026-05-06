@@ -264,8 +264,8 @@ pipeline {
     post {
         always {
             script {
-                // Calculate total pipeline duration
-                def totalDuration = (System.currentTimeMillis() - (env.PIPELINE_START as Long)) / 1000.0
+                // Calculate total pipeline duration matching Jenkins exactly
+                def totalDuration = (System.currentTimeMillis() - currentBuild.startTimeInMillis) / 1000.0
 
                 // Send metrics to GreenDevOps Dashboard
                 def cleanCommitMsg = (env.COMMIT_MSG ?: '').replaceAll('"', '\\\\"')
