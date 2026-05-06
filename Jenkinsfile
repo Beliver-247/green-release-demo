@@ -20,11 +20,17 @@ pipeline {
         SSH_CREDENTIALS = 'ubuntu-pc-ssh-dumindu'
 
         METRICS_URL = 'http://192.168.9.127:5001'
+        DASHBOARD_URL = 'http://192.168.9.127:5002'
     }
 
     stages {
         stage('Notify Start') {
             steps {
+                script {
+                    env.PIPELINE_START = System.currentTimeMillis().toString()
+                    env.COMMIT_SHA = ''
+                    env.COMMIT_MSG = ''
+                }
                 sh """
                     curl -s -X POST ${METRICS_URL}/deployment/start \
                         -H "Content-Type: application/json" \
@@ -44,12 +50,17 @@ pipeline {
                     ]],
                     extensions: [[ $class: 'CloneOption', shallow: false, depth: 0, noTags: false ]]
                 ])
+                script {
+                    env.COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    env.COMMIT_MSG = sh(script: 'git log -1 --pretty=%s', returnStdout: true).trim()
+                }
             }
         }
 
         stage('Build Optimizer - Analyze') {
             steps {
                 script {
+                    def analyzeStart = System.currentTimeMillis()
                     sh 'docker pull beliver247/build-optimizer-agent:latest'
                     def output = sh(
                         script: '''
@@ -87,6 +98,8 @@ pipeline {
                         ''',
                         returnStdout: true
                     ).trim()
+
+                    env.OPTIMIZER_DURATION = ((System.currentTimeMillis() - analyzeStart) / 1000.0).toString()
 
                     echo "=== Build Optimizer Output ==="
                     echo output
@@ -138,11 +151,13 @@ pipeline {
             }
             steps {
                 script {
+                    def buildStart = System.currentTimeMillis()
                     echo "Running selective Maven build for modules: ${env.AFFECTED_MODULES}"
                     env.MAVEN_BUILD_COMMANDS.split('\\|\\|\\|').each { cmd ->
                         echo "Executing: ${cmd}"
                         sh cmd
                     }
+                    env.BUILD_DURATION = ((System.currentTimeMillis() - buildStart) / 1000.0).toString()
                 }
             }
         }
@@ -153,11 +168,25 @@ pipeline {
             }
             steps {
                 script {
+                    def testStart = System.currentTimeMillis()
                     echo "Running selective tests for modules: ${env.AFFECTED_MODULES}"
+
+                    // Capture test output to count tests
+                    def testOutput = ''
                     env.MAVEN_TEST_COMMANDS.split('\\|\\|\\|').each { cmd ->
                         echo "Executing: ${cmd}"
-                        sh cmd
+                        testOutput += sh(script: cmd, returnStdout: true)
                     }
+                    env.TEST_DURATION = ((System.currentTimeMillis() - testStart) / 1000.0).toString()
+
+                    // Parse test counts from Maven surefire output
+                    def testsRun = 0
+                    def matcher = (testOutput =~ /Tests run: (\d+),/)
+                    while (matcher.find()) {
+                        testsRun += Integer.parseInt(matcher.group(1))
+                    }
+                    env.TESTS_EXECUTED = testsRun.toString()
+                    echo "Total tests executed: ${env.TESTS_EXECUTED}"
                 }
             }
         }
@@ -167,8 +196,12 @@ pipeline {
                 expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
-                dir('app') {
-                    sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest ."
+                script {
+                    def dockerStart = System.currentTimeMillis()
+                    dir('app') {
+                        sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest ."
+                    }
+                    env.DOCKER_BUILD_DURATION = ((System.currentTimeMillis() - dockerStart) / 1000.0).toString()
                 }
             }
         }
@@ -192,19 +225,23 @@ pipeline {
                 expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
-                sshagent(credentials: ["${SSH_CREDENTIALS}"]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} \
-                            'mkdir -p /home/${REMOTE_USER}/green-release-demo'
-                    """
-                    sh """
-                        scp -o StrictHostKeyChecking=no -P ${REMOTE_PORT} docker-compose.yml \
-                            ${REMOTE_USER}@${REMOTE_HOST}:/home/${REMOTE_USER}/green-release-demo/docker-compose.yml
-                    """
-                    sh """
-                        ssh -o StrictHostKeyChecking=no -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} \
-                            'set -e; cd /home/${REMOTE_USER}/green-release-demo; docker pull ${DOCKER_IMAGE}:latest; docker-compose down || true; docker-compose up -d; sleep 15; docker-compose ps'
-                    """
+                script {
+                    def deployStart = System.currentTimeMillis()
+                    sshagent(credentials: ["${SSH_CREDENTIALS}"]) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} \
+                                'mkdir -p /home/${REMOTE_USER}/green-release-demo'
+                        """
+                        sh """
+                            scp -o StrictHostKeyChecking=no -P ${REMOTE_PORT} docker-compose.yml \
+                                ${REMOTE_USER}@${REMOTE_HOST}:/home/${REMOTE_USER}/green-release-demo/docker-compose.yml
+                        """
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} \
+                                'set -e; cd /home/${REMOTE_USER}/green-release-demo; docker pull ${DOCKER_IMAGE}:latest; docker-compose down || true; docker-compose up -d; sleep 15; docker-compose ps'
+                        """
+                    }
+                    env.DEPLOY_DURATION = ((System.currentTimeMillis() - deployStart) / 1000.0).toString()
                 }
             }
         }
@@ -225,6 +262,45 @@ pipeline {
     }
 
     post {
+        always {
+            script {
+                // Calculate total pipeline duration
+                def totalDuration = (System.currentTimeMillis() - (env.PIPELINE_START as Long)) / 1000.0
+
+                // Send metrics to GreenDevOps Dashboard
+                def dashboardPayload = [
+                    job_name:             env.JOB_NAME,
+                    build_number:         env.BUILD_NUMBER,
+                    pipeline_type:        'optimized',
+                    commit_sha:           env.COMMIT_SHA ?: '',
+                    commit_message:       env.COMMIT_MSG ?: '',
+                    status:               currentBuild.currentResult ?: 'UNKNOWN',
+                    total_duration_s:     totalDuration,
+                    build_duration_s:     env.BUILD_DURATION ? env.BUILD_DURATION as Double : null,
+                    test_duration_s:      env.TEST_DURATION ? env.TEST_DURATION as Double : null,
+                    docker_duration_s:    env.DOCKER_BUILD_DURATION ? env.DOCKER_BUILD_DURATION as Double : null,
+                    deploy_duration_s:    env.DEPLOY_DURATION ? env.DEPLOY_DURATION as Double : null,
+                    optimizer_duration_s: env.OPTIMIZER_DURATION ? env.OPTIMIZER_DURATION as Double : null,
+                    modules_built:        env.AFFECTED_MODULES ?: '',
+                    modules_tested:       env.AFFECTED_MODULES ?: '',
+                    tests_executed:       env.TESTS_EXECUTED ? env.TESTS_EXECUTED as Integer : 0,
+                    tests_skipped:        0,
+                    affected_modules:     env.AFFECTED_MODULES ?: '',
+                    build_command:        env.MAVEN_BUILD_COMMANDS ?: '',
+                    test_command:         env.MAVEN_TEST_COMMANDS ?: '',
+                ]
+                def jsonPayload = new groovy.json.JsonBuilder(dashboardPayload).toString()
+
+                sh """
+                    curl -s -X POST ${DASHBOARD_URL}/api/builds \
+                        -H "Content-Type: application/json" \
+                        -d '${jsonPayload}' || true
+                """
+            }
+
+            sh "docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} || true"
+            sh "docker image prune -f || true"
+        }
         success {
             script {
                 if (params.DRY_RUN) {
@@ -238,10 +314,6 @@ pipeline {
         }
         failure {
             echo "Deployment FAILED — Build #${BUILD_NUMBER}"
-        }
-        always {
-            sh "docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} || true"
-            sh "docker image prune -f || true"
         }
     }
 }
