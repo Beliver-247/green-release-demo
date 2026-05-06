@@ -186,7 +186,9 @@ pipeline {
                         testsRun += Integer.parseInt(matcher.group(1))
                     }
                     env.TESTS_EXECUTED = testsRun.toString()
+                    env.TESTS_SKIPPED = (13 - testsRun).toString()
                     echo "Total tests executed: ${env.TESTS_EXECUTED}"
+                    echo "Total tests skipped: ${env.TESTS_SKIPPED}"
                 }
             }
         }
@@ -285,7 +287,7 @@ pipeline {
                     "modules_built": "${env.AFFECTED_MODULES ?: ''}",
                     "modules_tested": "${env.AFFECTED_MODULES ?: ''}",
                     "tests_executed": ${env.TESTS_EXECUTED ?: 0},
-                    "tests_skipped": 0,
+                    "tests_skipped": ${env.TESTS_SKIPPED ?: 13},
                     "affected_modules": "${env.AFFECTED_MODULES ?: ''}",
                     "build_command": "${env.MAVEN_BUILD_COMMANDS ?: ''}",
                     "test_command": "${env.MAVEN_TEST_COMMANDS ?: ''}"
