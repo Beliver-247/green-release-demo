@@ -61,7 +61,6 @@ pipeline {
             steps {
                 script {
                     def analyzeStart = System.currentTimeMillis()
-                    sh 'docker pull beliver247/build-optimizer-agent:latest'
                     def output = sh(
                         script: '''
                             EXIT_CODE=0
