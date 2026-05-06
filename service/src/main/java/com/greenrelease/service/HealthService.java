@@ -7,7 +7,7 @@ import com.greenrelease.core.model.HealthStatus;
  */
 public class HealthService {
 
-    private static final String APP_VERSION = "1.0.1"; // was "1.0.0";
+    private static final String APP_VERSION = "1.0.0"; // was "1.0.0";
     private static final String HEALTHY_STATUS = "UP";
 
     /**
