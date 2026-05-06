@@ -7,6 +7,11 @@ pipeline {
             defaultValue: false,
             description: 'When true, only run the optimizer analysis without building, testing, or deploying.'
         )
+        booleanParam(
+            name: 'FORCE_FULL_BUILD',
+            defaultValue: false,
+            description: 'Skip the optimizer analysis and force a full build and test of all modules.'
+        )
     }
 
     environment {
@@ -60,6 +65,16 @@ pipeline {
         stage('Build Optimizer - Analyze') {
             steps {
                 script {
+                    if (params.FORCE_FULL_BUILD) {
+                        echo "=== FORCE_FULL_BUILD is enabled. Skipping Optimizer analysis ==="
+                        env.OPTIMIZER_STATUS = 'success'
+                        env.AFFECTED_MODULES = 'all'
+                        env.MAVEN_BUILD_COMMANDS = 'mvn clean install -DskipTests'
+                        env.MAVEN_TEST_COMMANDS = 'mvn test'
+                        env.OPTIMIZER_DURATION = '0'
+                        return
+                    }
+
                     def analyzeStart = System.currentTimeMillis()
                     def output = sh(
                         script: '''
