@@ -20,7 +20,7 @@ pipeline {
         SSH_CREDENTIALS = 'ubuntu-pc-ssh-dumindu'
 
         METRICS_URL = 'http://192.168.9.127:5001'
-        DASHBOARD_URL = 'http://192.168.9.127:5002'
+        DASHBOARD_URL = 'http://192.168.9.127:5003'
     }
 
     stages {
