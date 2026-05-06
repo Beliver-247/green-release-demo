@@ -1,5 +1,5 @@
 # Selective Build Script
-<!-- Test 1: doc-only change -->
+
 
 
 This repository includes a Python helper, `selective_build.py`, that decides which Maven modules need to be built and tested after the most recent commit.
