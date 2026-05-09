@@ -11,7 +11,10 @@ import static org.junit.Assert.*;
 public class UserTest {
 
     @Test
-    public void testUserCreation() {
+    public void testUserCreation() throws InterruptedException {
+        // Simulating a heavy enterprise test (20 seconds)
+        Thread.sleep(20000);
+        
         User user = new User(1, "Alice", "alice@example.com");
 
         assertEquals(1, user.getId());
