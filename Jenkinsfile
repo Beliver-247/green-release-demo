@@ -193,16 +193,52 @@ pipeline {
                     }
                     env.TEST_DURATION = ((System.currentTimeMillis() - testStart) / 1000.0).toString()
 
-                    // Parse test counts from Maven surefire output
+                    // Parse test counts per module
                     def testsRun = 0
-                    def matcher = (testOutput =~ /Tests run: (\d+),/)
-                    while (matcher.find()) {
-                        testsRun += Integer.parseInt(matcher.group(1))
+                    def moduleDetails = [:]
+                    def baseline = ['core': 6, 'service': 0, 'api': 7, 'app': 0]
+                    
+                    baseline.each { mod, count ->
+                        moduleDetails[mod] = ['status': 'skipped', 'run': 0, 'skipped': count]
                     }
+
+                    def matcher = (testOutput =~ /@ (green-release-[a-z]+) ---[\s\S]*?Tests run: (\d+)/)
+                    while (matcher.find()) {
+                        def modName = matcher.group(1).replace("green-release-", "")
+                        def runCount = Integer.parseInt(matcher.group(2))
+                        if (moduleDetails.containsKey(modName)) {
+                            moduleDetails[modName] = ['status': 'run', 'run': runCount, 'skipped': 0]
+                        }
+                    }
+                    
+                    // Mark affected modules without tests as 'run' instead of 'skipped'
+                    if (env.AFFECTED_MODULES != null && env.AFFECTED_MODULES != '') {
+                        if (env.AFFECTED_MODULES == 'all') {
+                            baseline.each { mod, count ->
+                                moduleDetails[mod] = ['status': 'run', 'run': count, 'skipped': 0]
+                            }
+                        } else {
+                            env.AFFECTED_MODULES.split(',').each { mod ->
+                                def m = mod.trim()
+                                if (moduleDetails.containsKey(m)) {
+                                    moduleDetails[m].status = 'run'
+                                    moduleDetails[m].skipped = 0
+                                }
+                            }
+                        }
+                    }
+                    
+                    moduleDetails.each { mod, data ->
+                        testsRun += data.run
+                    }
+                    
                     env.TESTS_EXECUTED = testsRun.toString()
                     env.TESTS_SKIPPED = (13 - testsRun).toString()
+                    env.MODULE_DETAILS = groovy.json.JsonOutput.toJson(moduleDetails).replaceAll('"', '\\\\"')
+                    
                     echo "Total tests executed: ${env.TESTS_EXECUTED}"
                     echo "Total tests skipped: ${env.TESTS_SKIPPED}"
+                    echo "Module Details: ${env.MODULE_DETAILS}"
                 }
             }
         }
@@ -303,6 +339,7 @@ pipeline {
                     "tests_executed": ${env.TESTS_EXECUTED ?: 0},
                     "tests_skipped": ${env.TESTS_SKIPPED ?: 13},
                     "affected_modules": "${env.AFFECTED_MODULES ?: ''}",
+                    "module_details": "${env.MODULE_DETAILS ?: ''}",
                     "build_command": "${env.MAVEN_BUILD_COMMANDS ?: ''}",
                     "test_command": "${env.MAVEN_TEST_COMMANDS ?: ''}"
                 }"""
