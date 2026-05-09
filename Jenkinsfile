@@ -281,7 +281,7 @@ pipeline {
         always {
             script {
                 // Calculate total pipeline duration explicitly from our start time
-                def totalDuration = (System.currentTimeMillis() - Long.parseLong(env.PIPELINE_START)) / 1000.0
+                def totalDuration = (System.currentTimeMillis() - env.PIPELINE_START.toLong()) / 1000.0
 
                 // Send metrics to GreenDevOps Dashboard
                 def cleanCommitMsg = (env.COMMIT_MSG ?: '').replaceAll('"', '\\\\"')
