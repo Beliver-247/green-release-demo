@@ -12,7 +12,7 @@ import org.springframework.context.annotation.ComponentScan;
  * Spring Boot application entry point
  * Configures all modules and wires dependencies
  */
-
+//test pipeline
 @SpringBootApplication
 @ComponentScan(basePackages = {
         "com.greenrelease.api.controller",
