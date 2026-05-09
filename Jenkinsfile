@@ -319,6 +319,16 @@ pipeline {
                 // Calculate total pipeline duration explicitly from our start time
                 def totalDuration = (System.currentTimeMillis() - env.PIPELINE_START.toLong()) / 1000.0
 
+                // If pipeline was skipped by optimizer, env.MODULE_DETAILS won't be set.
+                if (!env.MODULE_DETAILS) {
+                    def baseline = ['core': 6, 'service': 0, 'api': 7, 'app': 0]
+                    def moduleDetails = [:]
+                    baseline.each { mod, count ->
+                        moduleDetails[mod] = ['status': 'skipped', 'run': 0, 'skipped': count]
+                    }
+                    env.MODULE_DETAILS = groovy.json.JsonOutput.toJson(moduleDetails).replaceAll('"', '\\\\"')
+                }
+
                 // Send metrics to GreenDevOps Dashboard
                 def cleanCommitMsg = (env.COMMIT_MSG ?: '').replaceAll('"', '\\\\"')
                 def jsonPayload = """{
