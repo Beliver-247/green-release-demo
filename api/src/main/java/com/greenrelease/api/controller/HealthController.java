@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Health check endpoint
  */
-//test comment for pipelines
 @RestController
 public class HealthController {
 
