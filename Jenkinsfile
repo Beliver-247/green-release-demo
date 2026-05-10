@@ -1,3 +1,56 @@
+def greenReleaseModules() {
+    return ['core', 'service', 'api', 'app']
+}
+
+def discoverModuleTestInventory() {
+    def inventory = [:]
+    greenReleaseModules().each { moduleName ->
+        def countText = sh(
+            script: '''
+                module="''' + moduleName + '''"
+                if [ -d "$module/src/test/java" ]; then
+                  grep -Rho '@Test' "$module/src/test/java" --include='*.java' 2>/dev/null | wc -l | tr -d ' '
+                else
+                  echo 0
+                fi
+            ''',
+            returnStdout: true
+        ).trim()
+        inventory[moduleName] = countText ? countText.toInteger() : 0
+    }
+    return inventory
+}
+
+def readSurefireTestCounts() {
+    def counts = [:]
+    greenReleaseModules().each { moduleName ->
+        def countText = sh(
+            script: '''
+                module="''' + moduleName + '''"
+                report_dir="$module/target/surefire-reports"
+                if [ -d "$report_dir" ] && find "$report_dir" -name 'TEST-*.xml' -type f | grep -q .; then
+                  find "$report_dir" -name 'TEST-*.xml' -type f -exec awk 'BEGIN { total = 0 } /<testsuite / { if (match($0, /tests="[0-9]+"/)) { value = substr($0, RSTART + 7, RLENGTH - 8); total += value } } END { print total }' {} +
+                else
+                  echo 0
+                fi
+            ''',
+            returnStdout: true
+        ).trim()
+        counts[moduleName] = countText ? countText.toInteger() : 0
+    }
+    return counts
+}
+
+def affectedModuleSet() {
+    if (env.AFFECTED_MODULES == 'all') {
+        return greenReleaseModules() as Set
+    }
+    if (!env.AFFECTED_MODULES?.trim()) {
+        return [] as Set
+    }
+    return env.AFFECTED_MODULES.split(',').collect { it.trim() }.findAll { it } as Set
+}
+
 pipeline {
     agent any
 
@@ -193,36 +246,28 @@ pipeline {
                     }
                     env.TEST_DURATION = ((System.currentTimeMillis() - testStart) / 1000.0).toString()
 
-                    // Calculate test counts based on affected modules and baseline
+                    // Calculate test counts from source inventory and Surefire reports.
                     def testsRun = 0
+                    def testsSkipped = 0
                     def moduleDetails = [:]
-                    def baseline = ['core': 6, 'service': 0, 'api': 7, 'app': 0]
-                    
-                    baseline.each { mod, count ->
-                        moduleDetails[mod] = ['status': 'skipped', 'run': 0, 'skipped': count]
-                    }
 
-                    if (env.AFFECTED_MODULES != null && env.AFFECTED_MODULES != '') {
-                        if (env.AFFECTED_MODULES == 'all') {
-                            baseline.each { mod, count ->
-                                moduleDetails[mod] = ['status': 'run', 'run': count, 'skipped': 0]
-                            }
-                        } else {
-                            env.AFFECTED_MODULES.split(',').each { mod ->
-                                def m = mod.trim()
-                                if (moduleDetails.containsKey(m)) {
-                                    moduleDetails[m] = ['status': 'run', 'run': baseline[m], 'skipped': 0]
-                                }
-                            }
-                        }
-                    }
-                    
-                    moduleDetails.each { mod, data ->
-                        testsRun += data.run
+                    def inventory = discoverModuleTestInventory()
+                    def executed = readSurefireTestCounts()
+                    def affected = affectedModuleSet()
+
+                    greenReleaseModules().each { mod ->
+                        def moduleTotal = inventory[mod] ?: 0
+                        def moduleRun = affected.contains(mod) ? (executed[mod] ?: 0) : 0
+                        def moduleSkipped = affected.contains(mod) ? 0 : moduleTotal
+                        def status = affected.contains(mod) ? 'run' : 'skipped'
+
+                        moduleDetails[mod] = ['status': status, 'run': moduleRun, 'skipped': moduleSkipped]
+                        testsRun += moduleRun
+                        testsSkipped += moduleSkipped
                     }
                     
                     env.TESTS_EXECUTED = testsRun.toString()
-                    env.TESTS_SKIPPED = (13 - testsRun).toString()
+                    env.TESTS_SKIPPED = testsSkipped.toString()
                     env.MODULE_DETAILS = groovy.json.JsonOutput.toJson(moduleDetails).replaceAll('"', '\\\\"')
                     
                     echo "Total tests executed: ${env.TESTS_EXECUTED}"
@@ -310,12 +355,17 @@ pipeline {
 
                 // If pipeline was skipped by optimizer, env.MODULE_DETAILS won't be set.
                 if (!env.MODULE_DETAILS) {
-                    def baseline = ['core': 6, 'service': 0, 'api': 7, 'app': 0]
+                    def inventory = discoverModuleTestInventory()
                     def moduleDetails = [:]
-                    baseline.each { mod, count ->
+                    def testsSkipped = 0
+                    greenReleaseModules().each { mod ->
+                        def count = inventory[mod] ?: 0
                         moduleDetails[mod] = ['status': 'skipped', 'run': 0, 'skipped': count]
+                        testsSkipped += count
                     }
                     env.MODULE_DETAILS = groovy.json.JsonOutput.toJson(moduleDetails).replaceAll('"', '\\\\"')
+                    env.TESTS_EXECUTED = env.TESTS_EXECUTED ?: '0'
+                    env.TESTS_SKIPPED = env.TESTS_SKIPPED ?: testsSkipped.toString()
                 }
 
                 // Send metrics to GreenDevOps Dashboard
@@ -336,7 +386,7 @@ pipeline {
                     "modules_built": "${env.AFFECTED_MODULES ?: ''}",
                     "modules_tested": "${env.AFFECTED_MODULES ?: ''}",
                     "tests_executed": ${env.TESTS_EXECUTED ?: 0},
-                    "tests_skipped": ${env.TESTS_SKIPPED ?: 13},
+                    "tests_skipped": ${env.TESTS_SKIPPED ?: 0},
                     "affected_modules": "${env.AFFECTED_MODULES ?: ''}",
                     "module_details": "${env.MODULE_DETAILS ?: ''}",
                     "build_command": "${env.MAVEN_BUILD_COMMANDS ?: ''}",
