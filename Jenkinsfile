@@ -193,7 +193,7 @@ pipeline {
                     }
                     env.TEST_DURATION = ((System.currentTimeMillis() - testStart) / 1000.0).toString()
 
-                    // Parse test counts per module
+                    // Calculate test counts based on affected modules and baseline
                     def testsRun = 0
                     def moduleDetails = [:]
                     def baseline = ['core': 6, 'service': 0, 'api': 7, 'app': 0]
@@ -202,16 +202,6 @@ pipeline {
                         moduleDetails[mod] = ['status': 'skipped', 'run': 0, 'skipped': count]
                     }
 
-                    def matcher = (testOutput =~ /@ (green-release-[a-z]+) ---[\s\S]*?Tests run: (\d+)/)
-                    while (matcher.find()) {
-                        def modName = matcher.group(1).replace("green-release-", "")
-                        def runCount = Integer.parseInt(matcher.group(2))
-                        if (moduleDetails.containsKey(modName)) {
-                            moduleDetails[modName] = ['status': 'run', 'run': runCount, 'skipped': 0]
-                        }
-                    }
-                    
-                    // Mark affected modules without tests as 'run' instead of 'skipped'
                     if (env.AFFECTED_MODULES != null && env.AFFECTED_MODULES != '') {
                         if (env.AFFECTED_MODULES == 'all') {
                             baseline.each { mod, count ->
@@ -221,8 +211,7 @@ pipeline {
                             env.AFFECTED_MODULES.split(',').each { mod ->
                                 def m = mod.trim()
                                 if (moduleDetails.containsKey(m)) {
-                                    moduleDetails[m].status = 'run'
-                                    moduleDetails[m].skipped = 0
+                                    moduleDetails[m] = ['status': 'run', 'run': baseline[m], 'skipped': 0]
                                 }
                             }
                         }
