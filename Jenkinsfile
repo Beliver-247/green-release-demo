@@ -155,7 +155,8 @@ pipeline {
                                   --head "$HEAD_SHA" \
                                   --project-root /work \
                                   --dry-run true \
-                                  --output-format json
+                                  --output-format json \
+                                  --carbon-aware
                               ' || EXIT_CODE=$?
 
                             if [ "$EXIT_CODE" -eq 1 ]; then
