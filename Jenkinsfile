@@ -199,6 +199,19 @@ pipeline {
                         echo "Affected modules: ${env.AFFECTED_MODULES}"
                         echo "Build commands: ${env.MAVEN_BUILD_COMMANDS}"
                         echo "Test commands: ${env.MAVEN_TEST_COMMANDS}"
+
+                        // Extract scheduling metrics if present
+                        if (result.scheduling) {
+                            env.CARBON_INTENSITY = result.scheduling.current_intensity?.toString() ?: ''
+                            env.GREEN_PROBABILITY = result.scheduling.green_probability?.toString() ?: ''
+                            env.SCHEDULING_ACTION = result.scheduling.action ?: ''
+                            env.SCHEDULING_ENGINE = result.scheduling.engine ?: ''
+                        } else {
+                            env.CARBON_INTENSITY = ''
+                            env.GREEN_PROBABILITY = ''
+                            env.SCHEDULING_ACTION = ''
+                            env.SCHEDULING_ENGINE = ''
+                        }
                     } else {
                         env.OPTIMIZER_STATUS = 'no_changes'
                         env.MAVEN_BUILD_COMMANDS = ''
@@ -388,10 +401,13 @@ pipeline {
                     "modules_tested": "${env.AFFECTED_MODULES ?: ''}",
                     "tests_executed": ${env.TESTS_EXECUTED ?: 0},
                     "tests_skipped": ${env.TESTS_SKIPPED ?: 0},
-                    "affected_modules": "${env.AFFECTED_MODULES ?: ''}",
                     "module_details": "${env.MODULE_DETAILS ?: ''}",
                     "build_command": "${env.MAVEN_BUILD_COMMANDS ?: ''}",
-                    "test_command": "${env.MAVEN_TEST_COMMANDS ?: ''}"
+                    "test_command": "${env.MAVEN_TEST_COMMANDS ?: ''}",
+                    "carbon_intensity": ${env.CARBON_INTENSITY ?: 'null'},
+                    "green_probability": ${env.GREEN_PROBABILITY ?: 'null'},
+                    "scheduling_action": "${env.SCHEDULING_ACTION ?: ''}",
+                    "scheduling_engine": "${env.SCHEDULING_ENGINE ?: ''}"
                 }"""
 
                 sh """
