@@ -340,15 +340,24 @@ pipeline {
             }
             steps {
                 sh '''
+                    echo "Checking health endpoint..."
                     for i in 1 2 3 4 5 6 7 8 9 10; do
-                        if curl -sf http://192.168.9.127:8081/health; then
-                            echo "SMOKE_TEST_PASSED"
+                        echo "Attempt $i..."
+                        # Try the LAN IP first
+                        if curl -s -f http://192.168.9.127:8081/health; then
+                            echo "\\nSMOKE_TEST_PASSED"
                             exit 0
                         fi
-                        echo "Waiting for app to start..."
+                        # Try the Docker Bridge IP (bypass UFW firewall)
+                        if curl -s -f http://172.17.0.1:8081/health; then
+                            echo "\\nSMOKE_TEST_PASSED"
+                            exit 0
+                        fi
                         sleep 5
                     done
-                    echo "Smoke test failed!"
+                    echo "Smoke test failed! Here is the detailed curl output for debugging:"
+                    curl -v http://192.168.9.127:8081/health || true
+                    curl -v http://172.17.0.1:8081/health || true
                     exit 1
                 '''
             }
