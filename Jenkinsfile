@@ -339,7 +339,18 @@ pipeline {
                 expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
-                sh 'curl -sf http://localhost:8081/health && echo SMOKE_TEST_PASSED || exit 1'
+                sh '''
+                    for i in 1 2 3 4 5 6 7 8 9 10; do
+                        if curl -sf http://192.168.9.127:8081/health; then
+                            echo "SMOKE_TEST_PASSED"
+                            exit 0
+                        fi
+                        echo "Waiting for app to start..."
+                        sleep 5
+                    done
+                    echo "Smoke test failed!"
+                    exit 1
+                '''
             }
         }
     }
