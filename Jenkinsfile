@@ -77,7 +77,6 @@ pipeline {
         REMOTE_USER = 'dumindu'
         SSH_CREDENTIALS = 'ubuntu-pc-ssh-dumindu'
 
-        METRICS_URL = 'http://192.168.9.127:5001'
         DASHBOARD_URL = 'http://192.168.9.127:5003'
     }
 
@@ -89,11 +88,6 @@ pipeline {
                     env.COMMIT_SHA = ''
                     env.COMMIT_MSG = ''
                 }
-                sh """
-                    curl -s -X POST ${METRICS_URL}/deployment/start \
-                        -H "Content-Type: application/json" \
-                        -d '{"job_name":"${JOB_NAME}","build_number":"${BUILD_NUMBER}"}'
-                """
             }
         }
 
@@ -320,43 +314,32 @@ pipeline {
             }
         }
 
-        stage('Deploy to Server') {
+        stage('Deploy Locally (Jenkins Server)') {
             when {
                 expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
                 script {
                     def deployStart = System.currentTimeMillis()
-                    sshagent(credentials: ["${SSH_CREDENTIALS}"]) {
-                        sh """
-                            ssh -o StrictHostKeyChecking=no -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} \
-                                'mkdir -p /home/${REMOTE_USER}/green-release-demo'
-                        """
-                        sh """
-                            scp -o StrictHostKeyChecking=no -P ${REMOTE_PORT} docker-compose.yml \
-                                ${REMOTE_USER}@${REMOTE_HOST}:/home/${REMOTE_USER}/green-release-demo/docker-compose.yml
-                        """
-                        sh """
-                            ssh -o StrictHostKeyChecking=no -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} \
-                                'set -e; cd /home/${REMOTE_USER}/green-release-demo; docker pull ${DOCKER_IMAGE}:latest; docker-compose down || true; docker-compose up -d; sleep 15; docker-compose ps'
-                        """
-                    }
+                    echo "Deploying app locally on the Jenkins server..."
+                    sh """
+                        export HOST_PORT=8081
+                        docker compose -p green-opt down || true
+                        docker compose -p green-opt up -d
+                        sleep 15
+                        docker compose -p green-opt ps
+                    """
                     env.DEPLOY_DURATION = ((System.currentTimeMillis() - deployStart) / 1000.0).toString()
                 }
             }
         }
 
-        stage('Smoke Test') {
+        stage('Smoke Test (Local)') {
             when {
                 expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
             }
             steps {
-                sshagent(credentials: ["${SSH_CREDENTIALS}"]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} \
-                            'curl -sf http://localhost:8081/health && echo SMOKE_TEST_PASSED || exit 1'
-                    """
-                }
+                sh 'curl -sf http://localhost:8081/health && echo SMOKE_TEST_PASSED || exit 1'
             }
         }
     }
