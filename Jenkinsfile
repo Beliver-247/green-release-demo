@@ -65,6 +65,16 @@ pipeline {
             defaultValue: false,
             description: 'Skip the optimizer analysis and force a full build and test of all modules.'
         )
+        booleanParam(
+            name: 'ENABLE_GREEN_SCHEDULING',
+            defaultValue: true,
+            description: 'Allow the pipeline to delay the build until a greener time window.'
+        )
+        string(
+            name: 'OVERRIDE_SCHEDULE_HOUR',
+            defaultValue: 'auto',
+            description: 'Override ML recommendation (e.g., "5" for 5 AM). Use "auto" to let the ML model decide.'
+        )
     }
 
     environment {
@@ -200,11 +210,15 @@ pipeline {
                             env.GREEN_PROBABILITY = result.scheduling.green_probability?.toString() ?: ''
                             env.SCHEDULING_ACTION = result.scheduling.action ?: ''
                             env.SCHEDULING_ENGINE = result.scheduling.engine ?: ''
+                            env.SCHEDULED_HOUR = result.scheduling.scheduled_hour?.toString() ?: ''
+                            env.TARGET_INTENSITY = result.scheduling.target_intensity?.toString() ?: ''
                         } else {
                             env.CARBON_INTENSITY = ''
                             env.GREEN_PROBABILITY = ''
                             env.SCHEDULING_ACTION = ''
                             env.SCHEDULING_ENGINE = ''
+                            env.SCHEDULED_HOUR = ''
+                            env.TARGET_INTENSITY = ''
                         }
                     } else {
                         env.OPTIMIZER_STATUS = 'no_changes'
@@ -215,6 +229,59 @@ pipeline {
 
                     if (params.DRY_RUN) {
                         echo "=== DRY RUN MODE — Skipping build, test, Docker, and deploy stages ==="
+                    }
+                }
+            }
+        }
+
+        stage('Green Scheduling') {
+            when {
+                expression { params.ENABLE_GREEN_SCHEDULING && env.OPTIMIZER_STATUS == 'success' }
+            }
+            steps {
+                script {
+                    def targetHourStr = params.OVERRIDE_SCHEDULE_HOUR
+                    def shouldSchedule = false
+                    def targetHour = 0
+                    
+                    if (targetHourStr != 'auto') {
+                        targetHour = targetHourStr.toInteger()
+                        echo "🌿 Developer OVERRIDE: Scheduling build for ${targetHour}:00."
+                        shouldSchedule = true
+                    } else if (env.SCHEDULING_ACTION == 'schedule' && env.SCHEDULED_HOUR) {
+                        targetHour = env.SCHEDULED_HOUR.toInteger()
+                        echo "🌿 Carbon intensity is high (${env.CARBON_INTENSITY}). ML Model recommends delaying until ${targetHour}:00."
+                        shouldSchedule = true
+                    } else if (env.SCHEDULING_ACTION == 'execute_now') {
+                        echo "🌿 ML Model says it's a Green Window right now! Proceeding with build."
+                    }
+
+                    if (shouldSchedule) {
+                        def now = new Date()
+                        def currentHour = now.getHours()
+                        def hoursToWait = targetHour - currentHour
+                        if (hoursToWait <= 0) {
+                            hoursToWait += 24
+                        }
+                        
+                        // Calculate delay in seconds
+                        def delayInSeconds = hoursToWait * 3600
+                        
+                        echo "Queueing a new build to start in ${hoursToWait} hours (${delayInSeconds} seconds)..."
+                        
+                        // Schedule the new build
+                        build job: env.JOB_NAME, quietPeriod: delayInSeconds, wait: false, parameters: [
+                            booleanParam(name: 'ENABLE_GREEN_SCHEDULING', value: false),
+                            booleanParam(name: 'DRY_RUN', value: params.DRY_RUN),
+                            booleanParam(name: 'FORCE_FULL_BUILD', value: params.FORCE_FULL_BUILD),
+                            string(name: 'OVERRIDE_SCHEDULE_HOUR', value: 'auto')
+                        ]
+                        
+                        currentBuild.description = "🌿 Rescheduled for ${targetHour}:00"
+                        
+                        // Gracefully abort the current run without breaking Jenkins Sandbox
+                        currentBuild.result = 'ABORTED'
+                        error("Pipeline rescheduled to a greener window at ${targetHour}:00 to save carbon.")
                     }
                 }
             }
