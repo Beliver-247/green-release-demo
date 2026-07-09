@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Health check endpoint
  */
-//comment to check ML model
 @RestController
 public class HealthController {
 
