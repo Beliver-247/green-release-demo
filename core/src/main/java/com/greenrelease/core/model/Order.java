@@ -3,7 +3,6 @@ package com.greenrelease.core.model;
 /**
  * Order domain model - pure business object with no Spring dependencies
  */
-//comment for testing purposes of pipeline
 public class Order {
     private final int id;
     private final int userId;
