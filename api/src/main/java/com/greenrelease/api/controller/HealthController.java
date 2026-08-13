@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Health check endpoint
  */
+//test comment to check integration
 @RestController
 public class HealthController {
 
