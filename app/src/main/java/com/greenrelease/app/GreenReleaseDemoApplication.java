@@ -36,7 +36,6 @@ public class GreenReleaseDemoApplication {
      */
     @Bean
     public UserService userService() {
-        System.out.println("hi from user service");
         return new UserService();
     }
 
