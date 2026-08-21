@@ -1,3 +1,5 @@
+@Library('green-agent') _
+
 def greenReleaseModules() {
     return ['core', 'service', 'api', 'app']
 }
@@ -240,49 +242,50 @@ pipeline {
             }
             steps {
                 script {
-                    def targetHourStr = params.OVERRIDE_SCHEDULE_HOUR
-                    def shouldSchedule = false
-                    def targetHour = 0
-                    
-                    if (targetHourStr != 'auto') {
-                        targetHour = targetHourStr.toInteger()
-                        echo "🌿 Developer OVERRIDE: Scheduling build for ${targetHour}:00."
-                        shouldSchedule = true
-                    } else if (env.SCHEDULING_ACTION == 'schedule' && env.SCHEDULED_HOUR) {
-                        targetHour = env.SCHEDULED_HOUR.toInteger()
-                        echo "🌿 Carbon intensity is high (${env.CARBON_INTENSITY}). ML Model recommends delaying until ${targetHour}:00."
-                        shouldSchedule = true
-                    } else if (env.SCHEDULING_ACTION == 'execute_now') {
-                        echo "🌿 ML Model says it's a Green Window right now! Proceeding with build."
+                    // ──────────────────────────────────────────────────────────────
+                    // PRE-FLIGHT SCHEDULING
+                    //
+                    // greenSchedule() queries both the ML Optimizer output
+                    // (already in env vars) and the Green AI Agent in a
+                    // single-shot call to produce one high-confidence
+                    // scheduled time.
+                    //
+                    // This is a build-only pipeline — preSelectedStrategy
+                    // from the decision is acknowledged but not applied
+                    // (no deploy stages here).
+                    // ──────────────────────────────────────────────────────────────
+                    def decision = greenSchedule(
+                        schedulingAction : env.SCHEDULING_ACTION,
+                        scheduledHour    : env.SCHEDULED_HOUR,
+                        greenProbability : env.GREEN_PROBABILITY,
+                        carbonIntensity  : env.CARBON_INTENSITY,
+                        overrideHour     : params.OVERRIDE_SCHEDULE_HOUR,
+                        urgentDeploy     : false
+                        // agentUrl defaults to GREEN_AGENT_URL env var or 'http://172.17.0.1:5002'
+                    )
+
+                    env.COMBINED_CONFIDENCE   = decision.combinedConfidence.toString()
+                    env.BOTH_SCHEDULERS_AGREE = decision.bothAgree.toString()
+                    env.SCHEDULING_REASON     = decision.reason.toString()
+
+                    if (decision.shouldSchedule) {
+                        build job: env.JOB_NAME,
+                              quietPeriod: decision.delaySeconds,
+                              wait: false,
+                              parameters: [
+                                  booleanParam(name: 'ENABLE_GREEN_SCHEDULING', value: false),
+                                  booleanParam(name: 'DRY_RUN',                 value: params.DRY_RUN),
+                                  booleanParam(name: 'FORCE_FULL_BUILD',        value: params.FORCE_FULL_BUILD),
+                                  string(name: 'OVERRIDE_SCHEDULE_HOUR',        value: 'auto')
+                              ]
+
+                        currentBuild.description = "🌿 Rescheduled for ${decision.scheduledHour}:00 | Confidence: ${String.format('%.2f', decision.combinedConfidence)}"
+                        currentBuild.result = 'ABORTED'
+                        error("Pipeline rescheduled to a greener window at ${decision.scheduledHour}:00 to save carbon. Combined confidence: ${String.format('%.2f', decision.combinedConfidence)}.")
                     }
 
-                    if (shouldSchedule) {
-                        def now = new Date()
-                        def currentHour = now.getHours()
-                        def hoursToWait = targetHour - currentHour
-                        if (hoursToWait <= 0) {
-                            hoursToWait += 24
-                        }
-                        
-                        // Calculate delay in seconds
-                        def delayInSeconds = hoursToWait * 3600
-                        
-                        echo "Queueing a new build to start in ${hoursToWait} hours (${delayInSeconds} seconds)..."
-                        
-                        // Schedule the new build
-                        build job: env.JOB_NAME, quietPeriod: delayInSeconds, wait: false, parameters: [
-                            booleanParam(name: 'ENABLE_GREEN_SCHEDULING', value: false),
-                            booleanParam(name: 'DRY_RUN', value: params.DRY_RUN),
-                            booleanParam(name: 'FORCE_FULL_BUILD', value: params.FORCE_FULL_BUILD),
-                            string(name: 'OVERRIDE_SCHEDULE_HOUR', value: 'auto')
-                        ]
-                        
-                        currentBuild.description = "🌿 Rescheduled for ${targetHour}:00"
-                        
-                        // Gracefully abort the current run without breaking Jenkins Sandbox
-                        currentBuild.result = 'ABORTED'
-                        error("Pipeline rescheduled to a greener window at ${targetHour}:00 to save carbon.")
-                    }
+                    echo "🌿 Green window confirmed. Proceeding with build."
+                    echo "📊 Combined confidence: ${String.format('%.2f', decision.combinedConfidence)} (ML: ${String.format('%.2f', decision.mlGreenProbability)} | AI: ${String.format('%.2f', decision.aiConfidence)})"
                 }
             }
         }
