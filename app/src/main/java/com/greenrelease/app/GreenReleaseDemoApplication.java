@@ -44,6 +44,7 @@ public class GreenReleaseDemoApplication {
      */
     @Bean
     public OrderService orderService() {
+        System.out.println("orderService bean Created");
         return new OrderService();
     }
 }
