@@ -23,6 +23,7 @@ public class Order {
     }
 
     public int getUserId() {
+        System.out.println("from user id geter");
         return userId;
     }
 
