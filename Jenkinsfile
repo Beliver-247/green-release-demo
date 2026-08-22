@@ -264,8 +264,8 @@ pipeline {
                         // agentUrl defaults to GREEN_AGENT_URL env var or 'http://172.17.0.1:5002'
                     )
 
-                    env.COMBINED_CONFIDENCE   = decision.combinedConfidence.toString()
-                    env.BOTH_SCHEDULERS_AGREE = decision.bothAgree.toString()
+                    env.COMBINED_CONFIDENCE   = decision.mlGreenProbability.toString()
+                    env.BOTH_SCHEDULERS_AGREE = "N/A"
                     env.SCHEDULING_REASON     = decision.reason.toString()
 
                     if (decision.shouldSchedule) {
@@ -279,13 +279,13 @@ pipeline {
                                   string(name: 'OVERRIDE_SCHEDULE_HOUR',        value: 'auto')
                               ]
 
-                        currentBuild.description = "🌿 Rescheduled for ${decision.scheduledHour}:00 | Confidence: ${String.format('%.2f', decision.combinedConfidence)}"
+                        currentBuild.description = "🌿 Rescheduled for ${decision.scheduledHour}:00 | ML Prob: ${String.format('%.2f', decision.mlGreenProbability)}"
                         currentBuild.result = 'ABORTED'
-                        error("Pipeline rescheduled to a greener window at ${decision.scheduledHour}:00 to save carbon. Combined confidence: ${String.format('%.2f', decision.combinedConfidence)}.")
+                        error("Pipeline rescheduled to a greener window at ${decision.scheduledHour}:00 to save carbon. Strategy pre-selected: ${decision.preSelectedStrategy}.")
                     }
 
                     echo "🌿 Green window confirmed. Proceeding with build."
-                    echo "📊 Combined confidence: ${String.format('%.2f', decision.combinedConfidence)} (ML: ${String.format('%.2f', decision.mlGreenProbability)} | AI: ${String.format('%.2f', decision.aiConfidence)})"
+                    echo "📊 ML Probability: ${String.format('%.2f', decision.mlGreenProbability)} | AI Strategy Confidence: ${String.format('%.2f', decision.aiConfidence)}"
                 }
             }
         }
