@@ -8,7 +8,6 @@ public class HealthStatus {
     private final String version;
 
     public HealthStatus(String status, String version) {
-        System.out.println("hi");
         this.status = status;
         this.version = version;
     }
