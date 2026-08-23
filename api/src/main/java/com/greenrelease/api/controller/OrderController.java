@@ -20,7 +20,6 @@ public class OrderController {
     private final OrderService orderService;
 
     public OrderController(OrderService orderService) {
-        System.out.println("hi from controller");
         this.orderService = orderService;
     }
 
