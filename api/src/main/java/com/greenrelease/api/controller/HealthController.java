@@ -16,6 +16,7 @@ public class HealthController {
     private final HealthService healthService;
 
     public HealthController(HealthService healthService) {
+        System.out.println("health controller");
         this.healthService = healthService;
     }
 
