@@ -21,6 +21,7 @@ public class HealthController {
 
     @GetMapping("/health")
     public ResponseEntity<HealthStatus> health() {
+        System.out.println("I am from health controller!");
         return ResponseEntity.ok(healthService.getHealth());
     }
 }
