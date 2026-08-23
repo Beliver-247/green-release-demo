@@ -89,7 +89,7 @@ pipeline {
         REMOTE_USER = 'dumindu'
         SSH_CREDENTIALS = 'ubuntu-pc-ssh-dumindu'
 
-        DASHBOARD_URL = 'http://172.17.0.1:5003'
+        DASHBOARD_URL = 'http://172.17.0.1:5005'
     }
 
     stages {
