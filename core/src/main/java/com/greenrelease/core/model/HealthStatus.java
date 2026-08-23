@@ -4,11 +4,8 @@ package com.greenrelease.core.model;
  * Health status model - static response structure
  */
 public class HealthStatus {
-    private String status;
-    private String version;
-
-    public HealthStatus() {
-    }
+    private final String status;
+    private final String version;
 
     public HealthStatus(String status, String version) {
         this.status = status;
