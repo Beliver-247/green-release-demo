@@ -28,9 +28,9 @@ public class GreenReleaseDemoApplication {
      */
     @Bean
     public HealthService healthService() {
-        System.out.println();
+        System.out.println("hi");
         return new HealthService();
-    } 
+    }
 
     /**
      * Wire UserService bean
