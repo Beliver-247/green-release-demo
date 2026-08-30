@@ -25,6 +25,7 @@ public class OrderController {
 
     @GetMapping
     public ResponseEntity<List<Order>> getAllOrders() {
+        System.out.println("orderService : " + orderService);
         return ResponseEntity.ok(orderService.getAllOrders());
     }
 
