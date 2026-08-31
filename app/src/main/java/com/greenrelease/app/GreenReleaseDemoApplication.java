@@ -28,7 +28,7 @@ public class GreenReleaseDemoApplication {
      */
     @Bean
     public HealthService healthService() {
-        //System.out.println("hi from health service");
+        System.out.println("hi from health service");
         return new HealthService();
     }
 
