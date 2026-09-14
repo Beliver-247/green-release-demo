@@ -41,7 +41,7 @@ public class GreenReleaseDemoApplication {
     }
 
     /**
-     * Wire OrderService bean. comment dddddd ffffggggg hhhhh 
+     * Wire OrderService bean.
      */
     @Bean
     public OrderService orderService() {
