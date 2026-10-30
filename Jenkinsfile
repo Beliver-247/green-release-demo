@@ -89,7 +89,7 @@ pipeline {
         REMOTE_USER = 'dumindu'
         SSH_CREDENTIALS = 'ubuntu-pc-ssh-dumindu'
 
-        DASHBOARD_URL = 'http://172.17.0.1:5005'
+        DASHBOARD_URL = 'http://172.17.0.1:5003'
     }
 
     stages {
@@ -117,6 +117,14 @@ pipeline {
                 script {
                     env.COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                     env.COMMIT_MSG = sh(script: 'git log -1 --pretty=%s', returnStdout: true).trim()
+
+                    // ── Power monitoring: start background sampler ──────────
+                    // power_log.csv is written by scripts/power_monitor.sh
+                    // PID is saved to power_monitor.pid so we can stop it later
+                    sh '''
+                        chmod +x scripts/power_monitor.sh 2>/dev/null || true
+                        scripts/power_monitor.sh start power_log.csv power_monitor.pid
+                    '''
                 }
             }
         }
@@ -442,6 +450,32 @@ pipeline {
                 // Calculate total pipeline duration explicitly from our start time
                 def totalDuration = (System.currentTimeMillis() - env.PIPELINE_START.toLong()) / 1000.0
 
+                // ── Power monitoring: stop sampler and compute carbon ───────
+                sh 'scripts/power_monitor.sh stop power_monitor.pid || true'
+
+                // Carbon intensity: prefer value from optimizer, else use fallback default
+                def carbonIntensityForCalc = env.CARBON_INTENSITY ?: '475.0'
+
+                def carbonJson = sh(
+                    script: """
+                        python3 scripts/calculate_carbon.py \\
+                            --csv      power_log.csv \\
+                            --duration ${totalDuration} \\
+                            --intensity ${carbonIntensityForCalc} \\
+                            --output   carbon_result.json
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                def carbonResult = new groovy.json.JsonSlurper().parseText(carbonJson)
+                env.POWER_METHOD       = carbonResult.method                  ?: 'unknown'
+                env.AVG_WATTS          = carbonResult.avg_watts?.toString()   ?: 'null'
+                env.PEAK_WATTS         = carbonResult.peak_watts?.toString()  ?: 'null'
+                env.ENERGY_WH          = carbonResult.energy_wh?.toString()   ?: 'null'
+                env.CARBON_GCO2E       = carbonResult.carbon_gco2e?.toString() ?: 'null'
+                env.POWER_SAMPLE_COUNT = carbonResult.sample_count?.toString() ?: '0'
+
+
                 // If pipeline was skipped by optimizer, env.MODULE_DETAILS won't be set.
                 if (!env.MODULE_DETAILS) {
                     def inventory = discoverModuleTestInventory()
@@ -482,7 +516,16 @@ pipeline {
                     "carbon_intensity": ${env.CARBON_INTENSITY ?: 'null'},
                     "green_probability": ${env.GREEN_PROBABILITY ?: 'null'},
                     "scheduling_action": "${env.SCHEDULING_ACTION ?: ''}",
-                    "scheduling_engine": "${env.SCHEDULING_ENGINE ?: ''}"
+                    "scheduling_engine": "${env.SCHEDULING_ENGINE ?: ''}",
+                    "power_monitoring": {
+                        "method": "${env.POWER_METHOD ?: 'unknown'}",
+                        "avg_watts": ${env.AVG_WATTS ?: 'null'},
+                        "peak_watts": ${env.PEAK_WATTS ?: 'null'},
+                        "energy_wh": ${env.ENERGY_WH ?: 'null'},
+                        "carbon_intensity_gco2_kwh": ${carbonIntensityForCalc},
+                        "carbon_gco2e": ${env.CARBON_GCO2E ?: 'null'},
+                        "sample_count": ${env.POWER_SAMPLE_COUNT ?: 0}
+                    }
                 }"""
 
                 writeFile file: 'dashboard_payload.json', text: jsonPayload
