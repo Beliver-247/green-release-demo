@@ -80,7 +80,6 @@ pipeline {
     }
 
     environment {
-        DOCKER_HUB_CREDENTIALS   = credentials('dockerhub-dumindu-credentials')
         DOCKER_IMAGE             = 'beliver247/green-release-app'
         DOCKER_TAG               = "${BUILD_NUMBER}"
 
@@ -374,20 +373,6 @@ pipeline {
                     }
                     env.DOCKER_BUILD_DURATION = ((System.currentTimeMillis() - dockerStart) / 1000.0).toString()
                 }
-            }
-        }
-
-        stage('Docker Push') {
-            when {
-                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
-            }
-            steps {
-                sh """
-                    echo "${DOCKER_HUB_CREDENTIALS_PSW}" | docker login -u "${DOCKER_HUB_CREDENTIALS_USR}" --password-stdin
-                    docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    docker push ${DOCKER_IMAGE}:latest
-                    docker logout
-                """
             }
         }
 
