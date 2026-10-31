@@ -1,5 +1,3 @@
-@Library('green-agent') _
-
 def greenReleaseModules() {
     return ['core', 'service', 'api', 'app']
 }
@@ -60,7 +58,7 @@ pipeline {
         booleanParam(
             name: 'DRY_RUN',
             defaultValue: false,
-            description: 'When true, only run the optimizer analysis without building, testing, or deploying.'
+            description: 'When true, only run the optimizer analysis without building or testing.'
         )
         booleanParam(
             name: 'FORCE_FULL_BUILD',
@@ -80,9 +78,6 @@ pipeline {
     }
 
     environment {
-        DOCKER_IMAGE             = 'beliver247/green-release-app'
-        DOCKER_TAG               = "${BUILD_NUMBER}"
-
         DASHBOARD_URL            = 'http://172.17.0.1:5003'
 
         // Electricity Maps API Key placeholder (paste your token below)
@@ -236,7 +231,7 @@ pipeline {
                     }
 
                     if (params.DRY_RUN) {
-                        echo "=== DRY RUN MODE — Skipping build, test, Docker, and deploy stages ==="
+                        echo "=== DRY RUN MODE — Skipping build and test stages ==="
                     }
                 }
             }
@@ -248,35 +243,27 @@ pipeline {
             }
             steps {
                 script {
-                    // ──────────────────────────────────────────────────────────────
-                    // PRE-FLIGHT SCHEDULING
-                    //
-                    // greenSchedule() queries both the ML Optimizer output
-                    // (already in env vars) and the Green AI Agent in a
-                    // single-shot call to produce one high-confidence
-                    // scheduled time.
-                    //
-                    // This is a build-only pipeline — preSelectedStrategy
-                    // from the decision is acknowledged but not applied
-                    // (no deploy stages here).
-                    // ──────────────────────────────────────────────────────────────
-                    def decision = greenSchedule(
-                        schedulingAction : env.SCHEDULING_ACTION,
-                        scheduledHour    : env.SCHEDULED_HOUR,
-                        greenProbability : env.GREEN_PROBABILITY,
-                        carbonIntensity  : env.CARBON_INTENSITY,
-                        overrideHour     : params.OVERRIDE_SCHEDULE_HOUR,
-                        urgentDeploy     : false
-                        // agentUrl defaults to GREEN_AGENT_URL env var or 'http://172.17.0.1:5002'
-                    )
+                    def targetHour
+                    if (params.OVERRIDE_SCHEDULE_HOUR != 'auto') {
+                        if (!params.OVERRIDE_SCHEDULE_HOUR.isInteger()) {
+                            error("OVERRIDE_SCHEDULE_HOUR must be 'auto' or an integer from 0 to 23.")
+                        }
+                        targetHour = params.OVERRIDE_SCHEDULE_HOUR.toInteger()
+                        if (targetHour < 0 || targetHour > 23) {
+                            error("OVERRIDE_SCHEDULE_HOUR must be 'auto' or an integer from 0 to 23.")
+                        }
+                    } else if (env.SCHEDULING_ACTION == 'schedule' && env.SCHEDULED_HOUR?.isInteger()) {
+                        targetHour = env.SCHEDULED_HOUR.toInteger()
+                    }
 
-                    env.COMBINED_CONFIDENCE   = decision.mlGreenProbability.toString()
-                    env.BOTH_SCHEDULERS_AGREE = "N/A"
-                    env.SCHEDULING_REASON     = decision.reason.toString()
-
-                    if (decision.shouldSchedule) {
+                    if (targetHour != null) {
+                        def delayHours = targetHour - new Date().getHours()
+                        if (delayHours <= 0) {
+                            delayHours += 24
+                        }
+                        def delaySeconds = delayHours * 3600
                         build job: env.JOB_NAME,
-                              quietPeriod: decision.delaySeconds,
+                              quietPeriod: delaySeconds,
                               wait: false,
                               parameters: [
                                   booleanParam(name: 'ENABLE_GREEN_SCHEDULING', value: false),
@@ -285,13 +272,12 @@ pipeline {
                                   string(name: 'OVERRIDE_SCHEDULE_HOUR',        value: 'auto')
                               ]
 
-                        currentBuild.description = "🌿 Rescheduled for ${decision.scheduledHour}:00 | ML Prob: ${String.format('%.2f', decision.mlGreenProbability)}"
+                        currentBuild.description = "🌿 Build rescheduled for ${targetHour}:00 | ML Prob: ${env.GREEN_PROBABILITY ?: 'n/a'}"
                         currentBuild.result = 'ABORTED'
-                        error("Pipeline rescheduled to a greener window at ${decision.scheduledHour}:00 to save carbon. Strategy pre-selected: ${decision.preSelectedStrategy}.")
+                        error("Build rescheduled to a greener window at ${targetHour}:00 to save carbon.")
                     }
 
-                    echo "🌿 Green window confirmed. Proceeding with build."
-                    echo "📊 ML Probability: ${String.format('%.2f', decision.mlGreenProbability)} | AI Strategy Confidence: ${String.format('%.2f', decision.aiConfidence)}"
+                    echo "🌿 Build window confirmed. Proceeding with build and test."
                 }
             }
         }
@@ -361,81 +347,6 @@ pipeline {
             }
         }
 
-        stage('Docker Build') {
-            when {
-                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
-            }
-            steps {
-                script {
-                    def dockerStart = System.currentTimeMillis()
-                    dir('app') {
-                        sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest ."
-                    }
-                    env.DOCKER_BUILD_DURATION = ((System.currentTimeMillis() - dockerStart) / 1000.0).toString()
-                }
-            }
-        }
-
-        stage('Deploy Locally (Jenkins Server)') {
-            when {
-                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
-            }
-            steps {
-                script {
-                    def deployStart = System.currentTimeMillis()
-                    echo "Deploying app locally on the Jenkins server..."
-                    sh """
-                        export HOST_PORT=8087
-                        if command -v docker-compose >/dev/null 2>&1; then
-                            docker-compose -p green-opt down || true
-                            docker ps -q --filter "publish=8087" | xargs -r docker rm -f || true
-                            docker-compose -p green-opt up -d
-                        elif docker compose version >/dev/null 2>&1; then
-                            docker compose -p green-opt down || true
-                            docker ps -q --filter "publish=8087" | xargs -r docker rm -f || true
-                            docker compose -p green-opt up -d
-                        else
-                            echo "docker compose not found, deploying directly with docker run..."
-                            docker rm -f green-opt-app || true
-                            docker ps -q --filter "publish=8087" | xargs -r docker rm -f || true
-                            docker run -d --name green-opt-app --restart always -p 8087:8080 -e SPRING_PROFILES_ACTIVE=prod beliver247/green-release-app:latest
-                        fi
-                        sleep 15
-                        docker ps --filter "name=green-opt"
-                    """
-                    env.DEPLOY_DURATION = ((System.currentTimeMillis() - deployStart) / 1000.0).toString()
-                }
-            }
-        }
-
-        stage('Smoke Test (Local)') {
-            when {
-                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
-            }
-            steps {
-                sh '''
-                    echo "Checking health endpoint..."
-                    for i in 1 2 3 4 5 6 7 8 9 10; do
-                        echo "Attempt $i..."
-                        # Try the LAN IP first
-                        if curl -s -f http://192.168.9.127:8087/health; then
-                            echo "\\nSMOKE_TEST_PASSED"
-                            exit 0
-                        fi
-                        # Try the Docker Bridge IP (bypass UFW firewall)
-                        if curl -s -f http://172.17.0.1:8087/health; then
-                            echo "\\nSMOKE_TEST_PASSED"
-                            exit 0
-                        fi
-                        sleep 5
-                    done
-                    echo "Smoke test failed! Here is the detailed curl output for debugging:"
-                    curl -v http://192.168.9.127:8087/health || true
-                    curl -v http://172.17.0.1:8087/health || true
-                    exit 1
-                '''
-            }
-        }
     }
 
     post {
@@ -471,8 +382,6 @@ pipeline {
                     "total_duration_s": ${totalDuration},
                     "build_duration_s": ${env.BUILD_DURATION ?: 'null'},
                     "test_duration_s": ${env.TEST_DURATION ?: 'null'},
-                    "docker_duration_s": ${env.DOCKER_BUILD_DURATION ?: 'null'},
-                    "deploy_duration_s": ${env.DEPLOY_DURATION ?: 'null'},
                     "optimizer_duration_s": ${env.OPTIMIZER_DURATION ?: 'null'},
                     "modules_built": "${env.AFFECTED_MODULES ?: ''}",
                     "modules_tested": "${env.AFFECTED_MODULES ?: ''}",
@@ -507,22 +416,20 @@ pipeline {
                 """
             }
 
-            sh "docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} || true"
-            sh "docker image prune -f || true"
         }
         success {
             script {
                 if (params.DRY_RUN) {
-                    echo "DRY RUN COMPLETE — Build #${BUILD_NUMBER} — Analysis only, no changes deployed"
+                    echo "DRY RUN COMPLETE — Build #${BUILD_NUMBER} — Analysis only"
                 } else if (env.OPTIMIZER_STATUS == 'success') {
-                    echo "Deployment SUCCESSFUL — Build #${BUILD_NUMBER} (modules: ${env.AFFECTED_MODULES})"
+                    echo "BUILD AND TEST SUCCESSFUL — Build #${BUILD_NUMBER} (modules: ${env.AFFECTED_MODULES})"
                 } else {
-                    echo "Pipeline COMPLETE — Build #${BUILD_NUMBER} — No code changes to deploy (status: ${env.OPTIMIZER_STATUS})"
+                    echo "PIPELINE COMPLETE — Build #${BUILD_NUMBER} — No code changes to build (status: ${env.OPTIMIZER_STATUS})"
                 }
             }
         }
         failure {
-            echo "Deployment FAILED — Build #${BUILD_NUMBER}"
+            echo "BUILD OR TEST FAILED — Build #${BUILD_NUMBER}"
         }
     }
 }

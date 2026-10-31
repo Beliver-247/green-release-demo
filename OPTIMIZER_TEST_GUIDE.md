@@ -83,7 +83,7 @@ Testing the GreenDevOps pipeline for research paper!
 **Expected Dashboard Result:**
 - **Tests Skipped:** 13 (All of them!)
 - **Modules Built:** `None`
-- **Time Saved:** Extreme (The pipeline skips the build, test, docker, and deploy stages entirely and finishes in ~5 seconds).
+- **Time Saved:** Extreme (The pipeline skips the build and test stages entirely and finishes in ~5 seconds).
 
 ---
 
