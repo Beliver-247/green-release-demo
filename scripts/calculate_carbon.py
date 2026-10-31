@@ -121,6 +121,7 @@ def main():
                         default=DEFAULT_CARBON_INTENSITY,
                         help=f"Carbon intensity in gCO2/kWh (default: {DEFAULT_CARBON_INTENSITY})")
     parser.add_argument("--output",    required=False, help="Optional path to write result JSON")
+    parser.add_argument("--attach-to", required=False, help="Path to existing JSON payload to inject 'power_monitoring' into")
     args = parser.parse_args()
 
     rows   = load_power_log(args.csv)
@@ -132,6 +133,17 @@ def main():
     if args.output:
         Path(args.output).write_text(out_json)
         print(f"[calculate_carbon] Result written to {args.output}", file=sys.stderr)
+
+    if args.attach_to:
+        target_path = Path(args.attach_to)
+        if target_path.exists():
+            try:
+                payload = json.loads(target_path.read_text())
+                payload["power_monitoring"] = result
+                target_path.write_text(json.dumps(payload, indent=2))
+                print(f"[calculate_carbon] Attached power_monitoring to {args.attach_to}", file=sys.stderr)
+            except Exception as e:
+                print(f"[calculate_carbon] Failed to attach to {args.attach_to}: {e}", file=sys.stderr)
 
     # Print a human-readable summary to stderr for Jenkins console
     print(

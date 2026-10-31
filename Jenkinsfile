@@ -80,16 +80,14 @@ pipeline {
     }
 
     environment {
-        DOCKER_HUB_CREDENTIALS = credentials('dockerhub-dumindu-credentials')
-        DOCKER_IMAGE = 'beliver247/green-release-app'
-        DOCKER_TAG = "${BUILD_NUMBER}"
+        DOCKER_HUB_CREDENTIALS   = credentials('dockerhub-dumindu-credentials')
+        DOCKER_IMAGE             = 'beliver247/green-release-app'
+        DOCKER_TAG               = "${BUILD_NUMBER}"
 
-        REMOTE_HOST = '147.15.144.192'
-        REMOTE_PORT = '2510'
-        REMOTE_USER = 'dumindu'
-        SSH_CREDENTIALS = 'ubuntu-pc-ssh-dumindu'
+        DASHBOARD_URL            = 'http://172.17.0.1:5003'
 
-        DASHBOARD_URL = 'http://172.17.0.1:5003'
+        // Electricity Maps API Key placeholder (paste your token below)
+        ELECTRICITY_MAPS_API_KEY = 'em_nGgVAPUefFX2qe8BkqzFgw3n8uGpJE2J'
     }
 
     stages {
@@ -147,6 +145,7 @@ pipeline {
                         script: '''
                             EXIT_CODE=0
                             tar -C "$PWD" -cf - . | docker run --rm -i --platform linux/amd64 \
+                              -e ELECTRICITY_MAPS_API_KEY="$ELECTRICITY_MAPS_API_KEY" \
                               -v /var/run/docker.sock:/var/run/docker.sock \
                               beliver247/build-optimizer-agent:latest \
                               bash -lc '
@@ -450,32 +449,6 @@ pipeline {
                 // Calculate total pipeline duration explicitly from our start time
                 def totalDuration = (System.currentTimeMillis() - env.PIPELINE_START.toLong()) / 1000.0
 
-                // ── Power monitoring: stop sampler and compute carbon ───────
-                sh 'scripts/power_monitor.sh stop power_monitor.pid || true'
-
-                // Carbon intensity: prefer value from optimizer, else use fallback default
-                def carbonIntensityForCalc = env.CARBON_INTENSITY ?: '475.0'
-
-                def carbonJson = sh(
-                    script: """
-                        python3 scripts/calculate_carbon.py \\
-                            --csv      power_log.csv \\
-                            --duration ${totalDuration} \\
-                            --intensity ${carbonIntensityForCalc} \\
-                            --output   carbon_result.json
-                    """,
-                    returnStdout: true
-                ).trim()
-
-                def carbonResult = new groovy.json.JsonSlurper().parseText(carbonJson)
-                env.POWER_METHOD       = carbonResult.method                  ?: 'unknown'
-                env.AVG_WATTS          = carbonResult.avg_watts?.toString()   ?: 'null'
-                env.PEAK_WATTS         = carbonResult.peak_watts?.toString()  ?: 'null'
-                env.ENERGY_WH          = carbonResult.energy_wh?.toString()   ?: 'null'
-                env.CARBON_GCO2E       = carbonResult.carbon_gco2e?.toString() ?: 'null'
-                env.POWER_SAMPLE_COUNT = carbonResult.sample_count?.toString() ?: '0'
-
-
                 // If pipeline was skipped by optimizer, env.MODULE_DETAILS won't be set.
                 if (!env.MODULE_DETAILS) {
                     def inventory = discoverModuleTestInventory()
@@ -516,19 +489,22 @@ pipeline {
                     "carbon_intensity": ${env.CARBON_INTENSITY ?: 'null'},
                     "green_probability": ${env.GREEN_PROBABILITY ?: 'null'},
                     "scheduling_action": "${env.SCHEDULING_ACTION ?: ''}",
-                    "scheduling_engine": "${env.SCHEDULING_ENGINE ?: ''}",
-                    "power_monitoring": {
-                        "method": "${env.POWER_METHOD ?: 'unknown'}",
-                        "avg_watts": ${env.AVG_WATTS ?: 'null'},
-                        "peak_watts": ${env.PEAK_WATTS ?: 'null'},
-                        "energy_wh": ${env.ENERGY_WH ?: 'null'},
-                        "carbon_intensity_gco2_kwh": ${carbonIntensityForCalc},
-                        "carbon_gco2e": ${env.CARBON_GCO2E ?: 'null'},
-                        "sample_count": ${env.POWER_SAMPLE_COUNT ?: 0}
-                    }
+                    "scheduling_engine": "${env.SCHEDULING_ENGINE ?: ''}"
                 }"""
 
                 writeFile file: 'dashboard_payload.json', text: jsonPayload
+
+                // Stop power monitor and attach carbon metrics to dashboard_payload.json
+                def carbonIntensityForCalc = env.CARBON_INTENSITY ?: '475.0'
+                sh """
+                    scripts/power_monitor.sh stop power_monitor.pid || true
+                    python3 scripts/calculate_carbon.py \\
+                        --csv power_log.csv \\
+                        --duration ${totalDuration} \\
+                        --intensity ${carbonIntensityForCalc} \\
+                        --attach-to dashboard_payload.json || true
+                """
+
                 sh """
                     curl -s -X POST ${DASHBOARD_URL}/api/builds \
                         -H "Content-Type: application/json" \
