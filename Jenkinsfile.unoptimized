@@ -105,19 +105,21 @@ pipeline {
                     sh """
                         export HOST_PORT=8082
                         if command -v docker-compose >/dev/null 2>&1; then
-                            COMPOSE_CMD="docker-compose"
+                            docker-compose -p green-unopt down || true
+                            docker ps -q --filter "publish=8082" | xargs -r docker rm -f || true
+                            docker-compose -p green-unopt up -d
                         elif docker compose version >/dev/null 2>&1; then
-                            COMPOSE_CMD="docker compose"
+                            docker compose -p green-unopt down || true
+                            docker ps -q --filter "publish=8082" | xargs -r docker rm -f || true
+                            docker compose -p green-unopt up -d
                         else
-                            echo "Neither docker-compose nor docker compose found!"
-                            exit 1
+                            echo "docker compose not found, deploying directly with docker run..."
+                            docker rm -f green-unopt-app || true
+                            docker ps -q --filter "publish=8082" | xargs -r docker rm -f || true
+                            docker run -d --name green-unopt-app --restart always -p 8082:8080 -e SPRING_PROFILES_ACTIVE=prod beliver247/green-release-app:latest
                         fi
-                        \$COMPOSE_CMD -p green-unopt down || true
-                        # Kill any stale container holding port 8082
-                        docker ps -q --filter "publish=8082" | xargs -r docker rm -f || true
-                        \$COMPOSE_CMD -p green-unopt up -d
                         sleep 15
-                        \$COMPOSE_CMD -p green-unopt ps
+                        docker ps --filter "name=green-unopt"
                     """
                     env.DEPLOY_DURATION = ((System.currentTimeMillis() - deployStart) / 1000.0).toString()
                 }

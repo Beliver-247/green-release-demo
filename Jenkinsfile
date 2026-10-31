@@ -387,19 +387,21 @@ pipeline {
                     sh """
                         export HOST_PORT=8087
                         if command -v docker-compose >/dev/null 2>&1; then
-                            COMPOSE_CMD="docker-compose"
+                            docker-compose -p green-opt down || true
+                            docker ps -q --filter "publish=8087" | xargs -r docker rm -f || true
+                            docker-compose -p green-opt up -d
                         elif docker compose version >/dev/null 2>&1; then
-                            COMPOSE_CMD="docker compose"
+                            docker compose -p green-opt down || true
+                            docker ps -q --filter "publish=8087" | xargs -r docker rm -f || true
+                            docker compose -p green-opt up -d
                         else
-                            echo "Neither docker-compose nor docker compose found!"
-                            exit 1
+                            echo "docker compose not found, deploying directly with docker run..."
+                            docker rm -f green-opt-app || true
+                            docker ps -q --filter "publish=8087" | xargs -r docker rm -f || true
+                            docker run -d --name green-opt-app --restart always -p 8087:8080 -e SPRING_PROFILES_ACTIVE=prod beliver247/green-release-app:latest
                         fi
-                        \$COMPOSE_CMD -p green-opt down || true
-                        # Kill any stale container holding port 8087
-                        docker ps -q --filter "publish=8087" | xargs -r docker rm -f || true
-                        \$COMPOSE_CMD -p green-opt up -d
                         sleep 15
-                        \$COMPOSE_CMD -p green-opt ps
+                        docker ps --filter "name=green-opt"
                     """
                     env.DEPLOY_DURATION = ((System.currentTimeMillis() - deployStart) / 1000.0).toString()
                 }
