@@ -6,6 +6,9 @@ pipeline {
         DOCKER_TAG             = "${BUILD_NUMBER}"
 
         DASHBOARD_URL          = 'http://172.17.0.1:5003'
+
+        // Electricity Maps API key placeholder (paste your token below)
+        ELECTRICITY_MAPS_API_KEY = 'em_nGgVAPUefFX2qe8BkqzFgw3n8uGpJE2J'
     }
 
     stages {
@@ -40,6 +43,21 @@ pipeline {
                         chmod +x scripts/power_monitor.sh 2>/dev/null || true
                         scripts/power_monitor.sh start power_log.csv power_monitor.pid
                     '''
+                }
+            }
+        }
+
+        stage('Capture Execution Carbon Intensity') {
+            steps {
+                script {
+                    def liveReading = sh(
+                        script: 'python3 scripts/fetch_carbon_intensity.py',
+                        returnStdout: true
+                    ).trim()
+                    def reading = new groovy.json.JsonSlurper().parseText(liveReading)
+                    env.EXECUTION_CARBON_INTENSITY = reading.carbon_intensity_gco2_kwh.toString()
+                    env.EXECUTION_CARBON_SOURCE = reading.source.toString()
+                    env.EXECUTION_CARBON_ZONE = reading.zone.toString()
                 }
             }
         }
@@ -180,7 +198,10 @@ pipeline {
                     "affected_modules": "all",
                     "module_details": "${env.MODULE_DETAILS ?: ''}",
                     "build_command": "mvn clean install -DskipTests",
-                    "test_command": "mvn test"
+                    "test_command": "mvn test",
+                    "carbon_intensity": ${env.EXECUTION_CARBON_INTENSITY ?: 'null'},
+                    "carbon_intensity_source": "${env.EXECUTION_CARBON_SOURCE ?: ''}",
+                    "carbon_intensity_zone": "${env.EXECUTION_CARBON_ZONE ?: ''}"
                 }"""
 
                 writeFile file: 'dashboard_payload.json', text: jsonPayload
@@ -191,7 +212,7 @@ pipeline {
                     python3 scripts/calculate_carbon.py \\
                         --csv power_log.csv \\
                         --duration ${totalDuration} \\
-                        --intensity 475.0 \\
+                        --intensity ${env.EXECUTION_CARBON_INTENSITY} \\
                         --attach-to dashboard_payload.json || true
                 """
 

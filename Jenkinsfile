@@ -282,6 +282,25 @@ pipeline {
             }
         }
 
+        stage('Capture Execution Carbon Intensity') {
+            when {
+                expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' }
+            }
+            steps {
+                script {
+                    def liveReading = sh(
+                        script: 'python3 scripts/fetch_carbon_intensity.py',
+                        returnStdout: true
+                    ).trim()
+                    def reading = new groovy.json.JsonSlurper().parseText(liveReading)
+                    env.EXECUTION_CARBON_INTENSITY = reading.carbon_intensity_gco2_kwh.toString()
+                    env.EXECUTION_CARBON_SOURCE = reading.source.toString()
+                    env.EXECUTION_CARBON_ZONE = reading.zone.toString()
+                    echo "Live execution carbon intensity: ${env.EXECUTION_CARBON_INTENSITY} gCO2/kWh (${env.EXECUTION_CARBON_ZONE})"
+                }
+            }
+        }
+
         stage('Selective Build') {
             when {
                 expression { !params.DRY_RUN && env.OPTIMIZER_STATUS == 'success' && env.MAVEN_BUILD_COMMANDS?.trim() }
@@ -390,7 +409,9 @@ pipeline {
                     "module_details": "${env.MODULE_DETAILS ?: ''}",
                     "build_command": "${env.MAVEN_BUILD_COMMANDS ?: ''}",
                     "test_command": "${env.MAVEN_TEST_COMMANDS ?: ''}",
-                    "carbon_intensity": ${env.CARBON_INTENSITY ?: 'null'},
+                    "carbon_intensity": ${env.EXECUTION_CARBON_INTENSITY ?: 'null'},
+                    "carbon_intensity_source": "${env.EXECUTION_CARBON_SOURCE ?: ''}",
+                    "carbon_intensity_zone": "${env.EXECUTION_CARBON_ZONE ?: ''}",
                     "green_probability": ${env.GREEN_PROBABILITY ?: 'null'},
                     "scheduling_action": "${env.SCHEDULING_ACTION ?: ''}",
                     "scheduling_engine": "${env.SCHEDULING_ENGINE ?: ''}"
@@ -399,7 +420,7 @@ pipeline {
                 writeFile file: 'dashboard_payload.json', text: jsonPayload
 
                 // Stop power monitor and attach carbon metrics to dashboard_payload.json
-                def carbonIntensityForCalc = env.CARBON_INTENSITY ?: '475.0'
+                def carbonIntensityForCalc = env.EXECUTION_CARBON_INTENSITY ?: '475.0'
                 sh """
                     scripts/power_monitor.sh stop power_monitor.pid || true
                     python3 scripts/calculate_carbon.py \\
