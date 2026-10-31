@@ -115,9 +115,9 @@ sample_rapl() {
             delta_uj=$(( e2 - e1 ))
         fi
 
-        delta_s=$(echo "scale=3; (${ts2} - ${ts1}) / 1000" | bc)
+        delta_s=$(awk -v t1="${ts1}" -v t2="${ts2}" 'BEGIN { printf "%.3f\n", (t2 - t1) / 1000.0 }')
         # Power = energy / time  →  W = µJ / µs  =  µJ / (s×10^6)
-        watts=$(echo "scale=2; ${delta_uj} / (${delta_s} * 1000000)" | bc 2>/dev/null || echo "0")
+        watts=$(awk -v duj="${delta_uj}" -v ds="${delta_s}" 'BEGIN { if (ds > 0) printf "%.2f\n", duj / (ds * 1000000.0); else print 0 }')
 
         echo "$(date +%s),${watts},rapl" >> "${output_csv}"
 
@@ -148,11 +148,10 @@ sample_cpu_estimate() {
     while true; do
         local pct
         pct=$(cpu_percent)
-        # Estimate: idle ~= 10% TDP, full load ~= 100% TDP
-        # watts = TDP_idle + (TDP - TDP_idle) * cpu_pct/100
-        #       ≈ 0.15*TDP + 0.85*TDP * cpu_pct/100
+        # Estimate: idle ~= 15% TDP, full load ~= 100% TDP
+        # watts = 0.15*TDP + 0.85*TDP * cpu_pct/100
         local watts
-        watts=$(echo "scale=2; 0.15 * ${CPU_TDP} + 0.85 * ${CPU_TDP} * ${pct} / 100" | bc)
+        watts=$(awk -v tdp="${CPU_TDP}" -v pct="${pct}" 'BEGIN { printf "%.2f\n", (0.15 * tdp) + (0.85 * tdp * pct / 100.0) }')
         echo "$(date +%s),${watts},cpu_estimate" >> "${output_csv}"
     done
 }

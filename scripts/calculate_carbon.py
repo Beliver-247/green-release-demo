@@ -34,12 +34,35 @@ Output JSON:
 import argparse
 import csv
 import json
+import os
 import statistics
 import sys
 from pathlib import Path
 
 DEFAULT_CARBON_INTENSITY = 475.0   # gCO2/kWh — global average (IEA 2023)
 DEFAULT_IDLE_WATTS       = 18.0    # fallback if CSV is empty
+
+
+def fetch_electricity_maps_intensity(api_key: str, zone: str = "LK") -> float | None:
+    """Fetch live carbon intensity directly from Electricity Maps API v4."""
+    try:
+        import urllib.request
+        url = f"https://api.electricitymaps.com/v4/carbon-intensity/latest?zone={zone}"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "auth-token": api_key,
+                "User-Agent": "GreenOptimizer/1.0"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            ci = float(data["carbonIntensity"])
+            print(f"[calculate_carbon] 🌿 Fetched live carbon intensity from Electricity Maps: {ci} gCO₂/kWh (zone: {zone})", file=sys.stderr)
+            return ci
+    except Exception as e:
+        print(f"[calculate_carbon] ⚠ Could not fetch from Electricity Maps: {e}", file=sys.stderr)
+        return None
 
 
 def load_power_log(csv_path: str) -> list[dict]:
@@ -118,14 +141,28 @@ def main():
     parser.add_argument("--csv",       required=True,  help="Path to power_log.csv")
     parser.add_argument("--duration",  required=True,  type=float, help="Pipeline duration in seconds")
     parser.add_argument("--intensity", required=False, type=float,
-                        default=DEFAULT_CARBON_INTENSITY,
+                        default=None,
                         help=f"Carbon intensity in gCO2/kWh (default: {DEFAULT_CARBON_INTENSITY})")
+    parser.add_argument("--api-key",   required=False, help="Electricity Maps API key")
+    parser.add_argument("--zone",      required=False, default="LK", help="Electricity Maps zone (default: LK)")
     parser.add_argument("--output",    required=False, help="Optional path to write result JSON")
     parser.add_argument("--attach-to", required=False, help="Path to existing JSON payload to inject 'power_monitoring' into")
     args = parser.parse_args()
 
+    api_key = args.api_key or os.environ.get("ELECTRICITY_MAPS_API_KEY")
+    carbon_intensity = args.intensity
+
+    # If intensity is missing or default fallback, try fetching live data from Electricity Maps
+    if api_key and (carbon_intensity is None or carbon_intensity == DEFAULT_CARBON_INTENSITY):
+        live_ci = fetch_electricity_maps_intensity(api_key, zone=args.zone)
+        if live_ci is not None:
+            carbon_intensity = live_ci
+
+    if carbon_intensity is None:
+        carbon_intensity = DEFAULT_CARBON_INTENSITY
+
     rows   = load_power_log(args.csv)
-    result = calculate(rows, args.duration, args.intensity)
+    result = calculate(rows, args.duration, carbon_intensity)
 
     out_json = json.dumps(result, indent=2)
     print(out_json)
@@ -140,6 +177,9 @@ def main():
             try:
                 payload = json.loads(target_path.read_text())
                 payload["power_monitoring"] = result
+                # Also ensure top-level carbon_intensity field is populated with the live reading
+                if payload.get("carbon_intensity") in [None, "", "null"]:
+                    payload["carbon_intensity"] = result["carbon_intensity_gco2_kwh"]
                 target_path.write_text(json.dumps(payload, indent=2))
                 print(f"[calculate_carbon] Attached power_monitoring to {args.attach_to}", file=sys.stderr)
             except Exception as e:
