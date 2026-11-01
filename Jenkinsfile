@@ -75,6 +75,16 @@ pipeline {
             defaultValue: 'auto',
             description: 'Override ML recommendation (e.g., "5" for 5 AM). Use "auto" to let the ML model decide.'
         )
+        string(
+            name: 'BASELINE_BUILD_NUMBER',
+            defaultValue: 'auto',
+            description: 'Optional successful unoptimized build number to compare against.'
+        )
+        string(
+            name: 'PARENT_BUILD_NUMBER',
+            defaultValue: '',
+            description: 'Internal link to the build that scheduled this run.'
+        )
     }
 
     environment {
@@ -269,10 +279,13 @@ pipeline {
                                   booleanParam(name: 'ENABLE_GREEN_SCHEDULING', value: false),
                                   booleanParam(name: 'DRY_RUN',                 value: params.DRY_RUN),
                                   booleanParam(name: 'FORCE_FULL_BUILD',        value: params.FORCE_FULL_BUILD),
-                                  string(name: 'OVERRIDE_SCHEDULE_HOUR',        value: 'auto')
+                                  string(name: 'OVERRIDE_SCHEDULE_HOUR',        value: 'auto'),
+                                  string(name: 'BASELINE_BUILD_NUMBER',        value: params.BASELINE_BUILD_NUMBER),
+                                  string(name: 'PARENT_BUILD_NUMBER',           value: env.BUILD_NUMBER)
                               ]
 
                         currentBuild.description = "🌿 Build rescheduled for ${targetHour}:00 | ML Prob: ${env.GREEN_PROBABILITY ?: 'n/a'}"
+                        env.RESCHEDULED_PARENT = 'true'
                         currentBuild.result = 'ABORTED'
                         error("Build rescheduled to a greener window at ${targetHour}:00 to save carbon.")
                     }
@@ -371,6 +384,11 @@ pipeline {
     post {
         always {
             script {
+                if (env.RESCHEDULED_PARENT == 'true') {
+                    echo "Skipping dashboard metrics for scheduling parent build #${BUILD_NUMBER}; the child build will be recorded."
+                    return
+                }
+
                 // Calculate total pipeline duration explicitly from our start time
                 def totalDuration = (System.currentTimeMillis() - env.PIPELINE_START.toLong()) / 1000.0
 
@@ -394,6 +412,8 @@ pipeline {
                 def jsonPayload = """{
                     "job_name": "${env.JOB_NAME}",
                     "build_number": "${env.BUILD_NUMBER}",
+                    "parent_build_number": ${params.PARENT_BUILD_NUMBER?.isInteger() ? params.PARENT_BUILD_NUMBER : 'null'},
+                    "baseline_build_number": ${params.BASELINE_BUILD_NUMBER?.isInteger() ? params.BASELINE_BUILD_NUMBER : 'null'},
                     "pipeline_type": "optimized",
                     "commit_sha": "${env.COMMIT_SHA ?: ''}",
                     "commit_message": "${cleanCommitMsg}",
