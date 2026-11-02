@@ -3,6 +3,7 @@ package com.greenrelease.core.model;
 /**
  * Health status model - static response structure
  */
+//adding a comment to test the commit hook
 public class HealthStatus {
     private final String status;
     private final String version;
