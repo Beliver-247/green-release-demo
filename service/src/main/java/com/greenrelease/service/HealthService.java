@@ -9,6 +9,7 @@ public class HealthService {
 
     private static final String APP_VERSION = "1.0.1"; 
     private static final String HEALTHY_STATUS = "UP";
+    //test comment
 
     /**
      * Get application health status
