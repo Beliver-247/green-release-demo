@@ -9,13 +9,13 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Health check endpoint
  */
-//test comment
 @RestController
 public class HealthController {
 
     private final HealthService healthService;
 
     public HealthController(HealthService healthService) {
+        System.out.println("HealthController initialized with HealthService: " + healthService);
         this.healthService = healthService;
     }
 
