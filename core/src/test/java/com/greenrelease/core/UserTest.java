@@ -12,8 +12,8 @@ public class UserTest {
 
     @Test
     public void testUserCreation() throws InterruptedException {
-        // Simulating a heavy enterprise test (20 seconds)
-        Thread.sleep(20000);
+        // Simulating a heavy enterprise test (10 seconds)
+        Thread.sleep(10000);
         
         User user = new User(1, "Alice", "alice@example.com");
 

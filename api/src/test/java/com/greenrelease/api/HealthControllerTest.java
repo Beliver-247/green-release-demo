@@ -31,8 +31,8 @@ public class HealthControllerTest {
 
     @Test
     public void testHealthEndpoint() throws Exception {
-        // Simulating a heavy enterprise test (20 seconds)
-        Thread.sleep(20000);
+        // Simulating a heavy enterprise test (10 seconds)
+        Thread.sleep(10000);
         
         HealthStatus healthStatus = new HealthStatus("UP", "1.0.0");
         when(healthService.getHealth()).thenReturn(healthStatus);
