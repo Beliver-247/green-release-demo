@@ -10,6 +10,7 @@ public class HealthStatus {
 
     public HealthStatus(String status, String version) {
         this.status = status;
+        //comment added to test the commit hook
         this.version = version;
     }
 
